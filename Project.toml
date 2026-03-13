@@ -1,0 +1,11 @@
+name = "IsingLearning"
+uuid = "e943fad4-50f4-4dc7-acaf-cc14565d7d32"
+version = "0.1.0"
+authors = ["Fabian IJpelaar <87425229+f-ij@users.noreply.github.com>"]
+
+[deps]
+LuxCore = "bb33d45b-7691-41d6-9220-0943567d0623"
+Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
+
+[compat]
+LuxCore = "1.5.3"
