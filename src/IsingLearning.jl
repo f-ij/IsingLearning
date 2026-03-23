@@ -12,7 +12,7 @@ import LuxCore: initialparameters, initialstates
 import Processes: init, step!
 
 include("Utils.jl")
-include("SparseAdjacency.jl")
 include("LuxModel.jl")
+include("LearningLoop.jl")
 
 end # module IsingLearning

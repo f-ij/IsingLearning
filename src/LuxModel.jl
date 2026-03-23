@@ -84,33 +84,6 @@ function IsingEPLayer(graph_init;
                  Float32(β))
 end
 
-function ReducedBoltzmannArchitexture(layer_sizes...)
-    layer_gen = (Layer(layer_sizes[i],
-              Continuous(),
-              Coords(0, i)) for i in 1:length(layer_sizes))
-
-    
-    IsingGraph(layer_gen...,
-                Ising(), + Clamping(),
-                default_algorithm = Langevin())
-end
-
-"""
-    Create a graph copy, with separate state, but shared data
-"""
-function GraphFromSource(g::IsingGraph)
-    IsingGraph(
-        copy(state(g)),
-        adj(g),
-        temp(g),
-        g.default_algorithm,
-        g.hamiltonian,
-        g.defects,
-        g.addons,
-        g.layers,
-    )
-end
-
 # ─────────────────────────────────────────────────────────────────────
 #  Lux interface
 # ─────────────────────────────────────────────────────────────────────
