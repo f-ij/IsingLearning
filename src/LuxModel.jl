@@ -67,17 +67,17 @@ Equilibrium Propagation (EP).
 The **nudged phase** and **weight update** live in [`ep_train_step!`](@ref),
 which is called from your training loop.
 """
-struct LayeredIsingGraphLayer{G} <: LuxCore.AbstractLuxLayer
+struct LayeredIsingGraphLayer{G,I,O} <: LuxCore.AbstractLuxLayer
     graph_init::G
-    input_layer::Int
-    output_layer::Int
+    input_layer::I
+    output_layer::O
     β::Float32
     fullsweeps::Int
 end
 
 function LayeredIsingGraphLayer(graph_init;
-                      input_idxs::AbstractVector{<:Integer},
-                      output_idxs::AbstractVector{<:Integer},
+                      input_idxs,
+                      output_idxs,
                       β::Real = 0.1f0)
     LayeredIsingGraphLayer(graph_init,
                  Int32.(input_idxs),
@@ -92,8 +92,8 @@ end
 function initialparameters(rng::AbstractRNG, layer::LayeredIsingGraphLayer)
     g = layer.graph_init()  # throwaway graph just to read the initial values
     return (
-        weights = deepcopy((adj(g))),
-        biases  = rand(rng, eltype(g), numnodes(g)),  # placeholder random biases
+        w = deepcopy((adj(g))),
+        b  = rand(rng, eltype(g), numnodes(g)),  # placeholder random biases
         α_i     = rand(rng, eltype(g), numnodes(g))  # placeholder random self-energies
     )
 end
@@ -118,11 +118,11 @@ back into the graph `g` before running a simulation phase.
 Write the parameters to the source graph
 """
 function sync_params!(g::IsingGraph, ps)
-    nonzeros(offdiag(adj(g))) .= ps.weights
+    nonzeros(offdiag(adj(g))) .= ps.w
     biases = getparam(g.hamiltonian, Magfield, :b)
-    biases .= ps.biases
+    biases .= ps.b
     self_energies = diag(adj(g))
-    self_energies .= ps.α_i
+    self_energies .= ps.α
     return g
 end
 
@@ -148,7 +148,7 @@ function (layer::LayeredIsingGraphLayer)(x, ps, st)
     run(algo, Input(algo[1], state = g), lifetime = Repeat(length(state(g))*layer.fullsweeps), mode = :inline_synced)
     
     # 4. Read output spins
-    y = @view state(g[nlayers(g)])  # TODO: this assumes the output layer is the last layer; generalize to arbitrary output_layer
+    y = copy(@view state(g[nlayers(g)]))  # TODO: this assumes the output layer is the last layer; generalize to arbitrary output_layer
     
     return y, st  # st keys unchanged → Lux is happy
 end

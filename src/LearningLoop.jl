@@ -58,43 +58,6 @@ function graph_port_forward!(
 end
 
 """
-    contrastive_gradients(g, s_free, s_nudged; β) -> NamedTuple
-
-Compute edge and bias pseudo-gradients from a free-phase and nudged-phase
-state sample. The returned structure matches the Lux parameter layout
-used by `LayeredIsingGraphLayer`.
-"""
-function contrastive_gradients(
-    g,
-    s_free::AbstractVector,
-    s_nudged::AbstractVector;
-    β::Real,
-)
-    βf = Float32(β)
-    iszero(βf) && throw(ArgumentError("β must be non-zero"))
-
-    A = adj(g)
-    rows = rowvals(A)
-    Δw = similar(nonzeros(A), Float32)
-
-    @inbounds for col in axes(A, 2)
-        for nz_idx in nzrange(A, col)
-            row = rows[nz_idx]
-            Δw[nz_idx] = ep_edge_derivative_estimate(
-                row,
-                col,
-                s_nudged,
-                s_free,
-                βf,
-            )
-        end
-    end
-
-    Δb = (Float32.(s_nudged) .- Float32.(s_free)) ./ βf
-    return (weights = Δw, biases = Δb)
-end
-
-"""
     apply_sgd_update(ps, grads; η) -> ps_new
 
 Minimal parameter update for custom contrastive learning.
@@ -107,14 +70,6 @@ function apply_sgd_update(ps, grads; η::Real = 1f-3)
         biases = ps.biases .+ ηf .* grads.biases,
     )
 end
-
-_missing_phase_error(mode) = throw(ArgumentError(
-    "No $(mode)-phase callback was supplied. Pass `run_free_phase!` and " *
-    "`run_nudged_phase!` that call your Monte Carlo updater."
-))
-
-_missing_free_phase!(args...; kwargs...) = _missing_phase_error("free")
-_missing_nudged_phase!(args...; kwargs...) = _missing_phase_error("nudged")
 
 function _progress_tracker(data; enabled::Bool, desc::AbstractString)
     enabled || return nothing
@@ -135,50 +90,7 @@ function _progress_step!(progress, nsteps::Integer, total_loss::Real)
     return nothing
 end
 
-"""
-    contrastive_train_step!(layer, x, target, ps, st; kwargs...) -> (ps_new, st, aux)
 
-One custom-learning training step for an `LayeredIsingGraphLayer`.
-
-This function deliberately delegates the actual simulation details to two
-callbacks:
-
-- `run_free_phase!(g, layer, x; β)`
-- `run_nudged_phase!(g, layer, x, target; β)`
-
-Each callback should:
-
-1. Clamp / pin the relevant graph sites.
-2. Run your custom Monte Carlo dynamics.
-3. Return a full graph state vector snapshot after relaxation.
-
-The training update is then computed from those two snapshots using the
-contrastive rule.
-"""
-function contrastive_train_step!(
-    layer::LayeredIsingGraphLayer,
-    x,
-    target,
-    ps,
-    st;
-    β::Real = layer.β,
-    η::Real = 1f-3,
-    run_free_phase! = _missing_free_phase!,
-    run_nudged_phase! = _missing_nudged_phase!,
-    update_rule = apply_sgd_update,
-)
-    g = st.graph
-    sync_params!(g, ps)
-
-    s_free = Float32.(copy(run_free_phase!(g, layer, x; β = β)))
-    s_nudged = Float32.(copy(run_nudged_phase!(g, layer, x, target; β = β)))
-
-    grads = contrastive_gradients(g, s_free, s_nudged; β = β)
-    ps_new = update_rule(ps, grads; η = η)
-
-    y_free = Float32.(copy(s_free[layer.output_idxs]))
-    return ps_new, st, (; y = y_free, grads, s_free, s_nudged)
-end
 
 """
     fit_contrastive!(layer, data, ps, st; kwargs...) -> (ps, st, stats)

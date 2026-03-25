@@ -1,8 +1,9 @@
 @ProcessAlgorithm function CaptureState(isinggraph, 
-    @managed(buffer = similar(state(isinggraph))), 
+    @managed(captured = similar(state(isinggraph))), 
     @init (;isinggraph))
     
-    buffer .= state(isinggraph)
+    captured .= state(isinggraph)
+    return 
 end
 
 Capturer() = Unique(CaptureState())

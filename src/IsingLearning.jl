@@ -7,6 +7,7 @@ using InteractiveIsing
 using InteractiveIsing: state, adj, setparam!, getparam, setSpins!, nStates
 using InteractiveIsing.Processes
 using DataStructures
+using ChainRules, ChianRulesCore
 
 import LuxCore: initialparameters, initialstates
 import Processes: init, step!
