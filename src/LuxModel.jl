@@ -1,4 +1,4 @@
-export IsingEPLayer, ep_train_step!, edge_term_from_state, ep_edge_derivative_estimate
+export LayeredIsingGraphLayer, ep_train_step!, edge_term_from_state, ep_edge_derivative_estimate
 
 """
     edge_term_from_state(state_vec, i, j) -> Float32
@@ -35,11 +35,11 @@ function ep_edge_derivative_estimate(
 end
 
 # =====================================================================
-#  IsingEPLayer — Lux layer for Equilibrium Propagation on IsingGraphs
+#  LayeredIsingGraphLayer — Lux layer for Equilibrium Propagation on IsingGraphs
 # =====================================================================
 
 """
-    IsingEPLayer(graph_init; input_idxs, output_idxs, β = 0.1f0)
+    LayeredIsingGraphLayer(graph_init; input_idxs, output_idxs, β = 0.1f0)
 
 Lux layer wrapping an `InteractiveIsing.IsingGraph` for
 Equilibrium Propagation (EP).
@@ -67,18 +67,19 @@ Equilibrium Propagation (EP).
 The **nudged phase** and **weight update** live in [`ep_train_step!`](@ref),
 which is called from your training loop.
 """
-struct IsingEPLayer{F} <: LuxCore.AbstractLuxLayer
-    graph_init::F
-    input_idxs::Vector{Int32}
-    output_idxs::Vector{Int32}
+struct LayeredIsingGraphLayer{G} <: LuxCore.AbstractLuxLayer
+    graph_init::G
+    input_layer::Int
+    output_layer::Int
     β::Float32
+    fullsweeps::Int
 end
 
-function IsingEPLayer(graph_init;
+function LayeredIsingGraphLayer(graph_init;
                       input_idxs::AbstractVector{<:Integer},
                       output_idxs::AbstractVector{<:Integer},
                       β::Real = 0.1f0)
-    IsingEPLayer(graph_init,
+    LayeredIsingGraphLayer(graph_init,
                  Int32.(input_idxs),
                  Int32.(output_idxs),
                  Float32(β))
@@ -88,15 +89,16 @@ end
 #  Lux interface
 # ─────────────────────────────────────────────────────────────────────
 
-function initialparameters(rng::AbstractRNG, layer::IsingEPLayer)
+function initialparameters(rng::AbstractRNG, layer::LayeredIsingGraphLayer)
     g = layer.graph_init()  # throwaway graph just to read the initial values
     return (
         weights = deepcopy((adj(g))),
-        biases  = zeros(Float32, nStates(g)),  # TODO: or copy from graph param :b
+        biases  = rand(rng, eltype(g), numnodes(g)),  # placeholder random biases
+        α_i     = rand(rng, eltype(g), numnodes(g))  # placeholder random self-energies
     )
 end
 
-function initialstates(rng::AbstractRNG, layer::IsingEPLayer)
+function initialstates(rng::AbstractRNG, layer::LayeredIsingGraphLayer)
     return (
         graph = layer.graph_init(),
     )
@@ -112,33 +114,42 @@ end
 Write the learnable parameters from the Lux `ps` NamedTuple
 back into the graph `g` before running a simulation phase.
 """
-function sync_params!(g, ps)
-    nonzeros(adj(g)) .= ps.weights
-    # TODO: sync biases into the graph's bias parameter, e.g.
-    # setparam!(g, :b, ps.biases)
-    return nothing
+"""
+Write the parameters to the source graph
+"""
+function sync_params!(g::IsingGraph, ps)
+    nonzeros(offdiag(adj(g))) .= ps.weights
+    biases = getparam(g.hamiltonian, Magfield, :b)
+    biases .= ps.biases
+    self_energies = diag(adj(g))
+    self_energies .= ps.α_i
+    return g
 end
+
 
 # ─────────────────────────────────────────────────────────────────────
 #  Forward pass  (free phase)
 # ─────────────────────────────────────────────────────────────────────
 
-function (layer::IsingEPLayer)(x, ps, st)
+function (layer::LayeredIsingGraphLayer)(x, ps, st)
     g = st.graph
 
     # 1. Push learnable weights / biases into the graph
-    sync_params!(g, ps)
+    # sync_params!(g, ps)
 
     # 2. Clamp input spins to x
-    #    TODO: use setSpins! / setDefects! with layer.input_idxs
+    off!(g.index_set, layer.input_layer)  # ensure the input layer is turned off
+    state(g[1]) .= x  # TODO: this assumes the input layer is layer 1; generalize to arbitrary input_layer
 
     # 3. Run free phase (Ising hamiltonian only, clamping β = 0)
-    #    TODO: create / run a Process with the appropriate CompositeAlgorithm
-    #          and wait for it to finish (or run for N steps)
-
+    algo = st.relax_routine
+    #TODO: Use named variant when available
+    # For not algo[1] is the dynamics 
+    run(algo, Input(algo[1], state = g), lifetime = Repeat(length(state(g))*layer.fullsweeps), mode = :inline_synced)
+    
     # 4. Read output spins
-    y = copy(state(g)[layer.output_idxs])
-
+    y = @view state(g[nlayers(g)])  # TODO: this assumes the output layer is the last layer; generalize to arbitrary output_layer
+    
     return y, st  # st keys unchanged → Lux is happy
 end
 
@@ -201,7 +212,7 @@ One full Equilibrium Propagation parameter update:
 
 Returns a **new** `ps` NamedTuple (Lux convention: don't mutate ps).
 """
-function ep_train_step!(layer::IsingEPLayer, x, target, ps, st;
+function ep_train_step!(layer::LayeredIsingGraphLayer, x, target, ps, st;
                         β::Real  = layer.β,
                         η::Real  = 1f-3)
     g = st.graph

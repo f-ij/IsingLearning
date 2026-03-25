@@ -42,15 +42,23 @@ function delta_last_two(init)
     return anonymous
 end
 
+"""
+A processalgorithm that tests for convergence of a sample stream
+    using a sliding window of the last N samples, and a test function that 
+    checks if each sample is within a tolerance.
+
+The process can be used to determine when a Monte Carlo simulation has converged, by monitoring
+    the change in some observable (e.g. energy, magnetization) and checking if it has 
+    stabilized within a certain tolerance.
+"""
 struct ConvergeanceTest{T, F} <: ProcessAlgorithm
     eltype::Type{T}
     tol::T
     windowsize::Int
-    close_upon_convergence::Bool
     test::F
 end
 
-ConvergeanceTest(test, tol::T, windowsize::Int; close_upon_convergence::Bool = true) where T = ConvergeanceTest(T, tol, windowsize, close_upon_convergence, test)
+ConvergeanceTest(test, tol::T, windowsize::Int) where T = ConvergeanceTest(T, tol, windowsize, test)
 
 function init!(alg::ConvergeanceTest{T}, context) where T
     testwindow = CircularAll{T}(alg.windowsize, x -> abs(x) < alg.tol)
@@ -61,9 +69,9 @@ function step!(alg::ConvergeanceTest{T}, context) where T
     (;sample, testwindow) = context
     push!(testwindow, sample)
     converged = all(testwindow)
-    if converged && alg.close_upon_convergence
-        closeprocess(context)
-    end
+    # if converged && alg.close_upon_convergence
+    #     closeprocess(context)
+    # end
     return (testwindow = testwindow, converged = converged)
 end
 

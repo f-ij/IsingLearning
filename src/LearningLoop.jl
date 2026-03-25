@@ -62,7 +62,7 @@ end
 
 Compute edge and bias pseudo-gradients from a free-phase and nudged-phase
 state sample. The returned structure matches the Lux parameter layout
-used by `IsingEPLayer`.
+used by `LayeredIsingGraphLayer`.
 """
 function contrastive_gradients(
     g,
@@ -138,7 +138,7 @@ end
 """
     contrastive_train_step!(layer, x, target, ps, st; kwargs...) -> (ps_new, st, aux)
 
-One custom-learning training step for an `IsingEPLayer`.
+One custom-learning training step for an `LayeredIsingGraphLayer`.
 
 This function deliberately delegates the actual simulation details to two
 callbacks:
@@ -156,7 +156,7 @@ The training update is then computed from those two snapshots using the
 contrastive rule.
 """
 function contrastive_train_step!(
-    layer::IsingEPLayer,
+    layer::LayeredIsingGraphLayer,
     x,
     target,
     ps,
@@ -190,7 +190,7 @@ Lux parameter/state split, but the learning signal comes from your own
 contrastive Monte Carlo procedure.
 """
 function fit_contrastive!(
-    layer::IsingEPLayer,
+    layer::LayeredIsingGraphLayer,
     data,
     ps,
     st;
